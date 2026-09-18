@@ -4,7 +4,15 @@ Streamlit chat UI on top of query.py. Run with:
     streamlit run app.py
 """
 
+import os
+import sys
+
 import streamlit as st
+
+# Ensure this folder is on the import path — needed because Streamlit
+# Cloud runs from the repo root, not from basic-rag/, so query.py
+# wouldn't otherwise be found.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from query import answer
 
