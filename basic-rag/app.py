@@ -14,7 +14,7 @@ import streamlit as st
 # wouldn't otherwise be found.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from query import answer
+from querry import answer
 
 st.set_page_config(page_title="Python Handbook — Basic RAG", page_icon="🐍")
 st.title("🐍 Ask the Python Handbook")
