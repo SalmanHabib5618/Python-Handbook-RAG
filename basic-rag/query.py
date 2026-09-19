@@ -20,8 +20,10 @@ from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
+import ingest  # reuse the same path config so we read what ingest.py writes
+
 EMBED_MODEL = "all-MiniLM-L6-v2"
-DB_PATH = "chroma_db"
+DB_PATH = ingest.DB_PATH
 COLLECTION_NAME = "python_handbook"
 LLM_MODEL = "llama-3.3-70b-versatile"
 TOP_K = 4
