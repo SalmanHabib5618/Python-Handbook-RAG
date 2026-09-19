@@ -1,15 +1,15 @@
 """
 Basic RAG (Retrieval-Augmented Generation) App
 ------------------------------------------------
-Users can upload documents from different sources (PDF, DOCX, TXT, CSV, or a
-Web URL), the app builds a FAISS vector index over the content, and the user
-can then ask natural-language questions that are answered using only the
-uploaded content (with source citations).
+Users upload documents from different sources (PDF, DOCX, TXT, CSV, or a web
+URL). The app builds a FAISS vector index over the content, and the user can
+then ask natural-language questions answered using only that content, with
+sources shown for each answer.
 
-LLM: Groq (fast Llama inference) via GROQ_API_KEY
+LLM: Groq (openai/gpt-oss-20b by default) via GROQ_API_KEY
 Embeddings: local HuggingFace sentence-transformers (free, no extra API key)
 
-Stack: Streamlit + LangChain + FAISS + Groq
+Stack: Streamlit + LangChain (0.3.x) + FAISS + Groq
 """
 
 import os
@@ -46,13 +46,20 @@ if "qa_chain" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []  # list of (question, answer, sources)
 
-
 # ----------------------------- API key resolution -----------------------------
 # Prefer a secret set via Streamlit secrets / environment variable (recommended
 # for deployment) and only fall back to the sidebar input for local testing.
 # GROQ_API_KEY should never be hardcoded or committed to source control.
-default_groq_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+try:
+    default_groq_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+except Exception:
+    default_groq_key = os.environ.get("GROQ_API_KEY", "")
 
+GROQ_MODELS = [
+    "openai/gpt-oss-20b",   # fastest / cheapest, good default
+    "openai/gpt-oss-120b",  # stronger reasoning, slower
+    "groq/compound",        # agentic system model
+]
 
 # ----------------------------- Sidebar: setup -----------------------------
 with st.sidebar:
@@ -68,11 +75,7 @@ with st.sidebar:
     if groq_api_key:
         os.environ["GROQ_API_KEY"] = groq_api_key
 
-    model_name = st.selectbox(
-        "Groq model",
-        ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"],
-        index=0,
-    )
+    model_name = st.selectbox("Groq model", GROQ_MODELS, index=0)
 
     st.divider()
     st.header("📥 Add Sources")
@@ -100,23 +103,22 @@ def load_document(uploaded_file):
         tmp.write(uploaded_file.getvalue())
         tmp_path = tmp.name
 
-    if suffix == ".pdf":
-        loader = PyPDFLoader(tmp_path)
-    elif suffix == ".docx":
-        loader = Docx2txtLoader(tmp_path)
-    elif suffix == ".csv":
-        loader = CSVLoader(tmp_path)
-    else:  # .txt and anything else we treat as plain text
-        loader = TextLoader(tmp_path, encoding="utf-8")
+    try:
+        if suffix == ".pdf":
+            loader = PyPDFLoader(tmp_path)
+        elif suffix == ".docx":
+            loader = Docx2txtLoader(tmp_path)
+        elif suffix == ".csv":
+            loader = CSVLoader(tmp_path)
+        else:  # .txt and anything else we treat as plain text
+            loader = TextLoader(tmp_path, encoding="utf-8")
 
-    docs = loader.load()
-
-    # Tag each chunk with the original filename for citation purposes
-    for d in docs:
-        d.metadata["source"] = uploaded_file.name
-
-    os.unlink(tmp_path)
-    return docs
+        docs = loader.load()
+        for d in docs:
+            d.metadata["source"] = uploaded_file.name
+        return docs
+    finally:
+        os.unlink(tmp_path)
 
 
 @st.cache_resource(show_spinner=False)
@@ -187,13 +189,16 @@ else:
 
     if ask_clicked and question:
         with st.spinner("Thinking..."):
-            result = st.session_state.qa_chain.invoke({"query": question})
-            answer = result["result"]
-            sources = sorted({
-                doc.metadata.get("source", "unknown")
-                for doc in result.get("source_documents", [])
-            })
-            st.session_state.chat_history.insert(0, (question, answer, sources))
+            try:
+                result = st.session_state.qa_chain.invoke({"query": question})
+                answer = result["result"]
+                sources = sorted({
+                    doc.metadata.get("source", "unknown")
+                    for doc in result.get("source_documents", [])
+                })
+                st.session_state.chat_history.insert(0, (question, answer, sources))
+            except Exception as e:
+                st.error(f"Something went wrong while answering: {e}")
 
     for q, a, srcs in st.session_state.chat_history:
         with st.chat_message("user"):
