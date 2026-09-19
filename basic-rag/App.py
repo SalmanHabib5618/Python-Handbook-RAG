@@ -55,29 +55,19 @@ try:
 except Exception:
     default_groq_key = os.environ.get("GROQ_API_KEY", "")
 
-GROQ_MODELS = [
-    "openai/gpt-oss-20b",   # fastest / cheapest, good default
-    "openai/gpt-oss-120b",  # stronger reasoning, slower
-    "groq/compound",        # agentic system model
-]
+# Fixed model — not exposed in the UI. Change here if you want a different
+# default (options: "openai/gpt-oss-20b", "openai/gpt-oss-120b", "groq/compound").
+MODEL_NAME = "openai/gpt-oss-20b"
+
+# The key is read only from Streamlit secrets / environment — it is never
+# shown, requested, or editable in the UI, so visitors to the deployed app
+# can't see or change it.
+groq_api_key = default_groq_key
+if groq_api_key:
+    os.environ["GROQ_API_KEY"] = groq_api_key
 
 # ----------------------------- Sidebar: setup -----------------------------
 with st.sidebar:
-    st.header("⚙️ Setup")
-
-    groq_api_key = st.text_input(
-        "Groq API Key",
-        value=default_groq_key,
-        type="password",
-        help="Stored only for this session. Prefer setting GROQ_API_KEY as a "
-             "secret/environment variable instead of pasting it here.",
-    )
-    if groq_api_key:
-        os.environ["GROQ_API_KEY"] = groq_api_key
-
-    model_name = st.selectbox("Groq model", GROQ_MODELS, index=0)
-
-    st.divider()
     st.header("📥 Add Sources")
 
     uploaded_files = st.file_uploader(
@@ -130,7 +120,10 @@ def get_embeddings():
 # ----------------------------- Build knowledge base -----------------------------
 if build_clicked:
     if not groq_api_key:
-        st.sidebar.error("Please enter your Groq API key first.")
+        st.sidebar.error(
+            "No Groq API key is configured for this app. Set GROQ_API_KEY "
+            "in Streamlit secrets (Settings → Secrets) and reboot the app."
+        )
     elif not uploaded_files and not web_url:
         st.sidebar.error("Upload at least one file or provide a URL.")
     else:
@@ -163,7 +156,7 @@ if build_clicked:
                 vectorstore = FAISS.from_documents(chunks, embeddings)
                 st.session_state.vectorstore = vectorstore
 
-                llm = ChatGroq(model=model_name, temperature=0)
+                llm = ChatGroq(model=MODEL_NAME, temperature=0)
                 st.session_state.qa_chain = RetrievalQA.from_chain_type(
                     llm=llm,
                     retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
