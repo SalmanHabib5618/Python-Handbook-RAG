@@ -14,6 +14,7 @@ import streamlit as st
 # wouldn't otherwise be found.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import ingest
 from query import answer
 
 st.set_page_config(page_title="Python Handbook — Basic RAG", page_icon="🐍")
@@ -22,6 +23,31 @@ st.caption(
     "Basic RAG demo — single retrieval pass over 'The Python Handbook' "
     "by Flavio Copes. Ask any question about Python fundamentals."
 )
+
+
+@st.cache_resource(show_spinner=False)
+def ensure_index_built():
+    """
+    Build the vector database on first launch if it doesn't exist yet.
+    chroma_db/ is gitignored (it's a generated artifact, not source),
+    so a freshly deployed app has no index until this runs once.
+    st.cache_resource means this only runs once per server instance,
+    not on every rerun/question.
+    """
+    import chromadb
+
+    client = chromadb.PersistentClient(path=ingest.DB_PATH)
+    try:
+        client.get_collection(ingest.COLLECTION_NAME)
+        return  # already built
+    except Exception:
+        pass  # doesn't exist yet — build it below
+
+    ingest.main(ingest.DEFAULT_PDF_PATH)
+
+
+with st.spinner("Setting up the knowledge base (first run only, ~1 minute)..."):
+    ensure_index_built()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
