@@ -18,7 +18,13 @@ from sentence_transformers import SentenceTransformer
 CHUNK_SIZE = 800       # characters per chunk (roughly ~150-200 words)
 CHUNK_OVERLAP = 150    # characters shared between consecutive chunks
 EMBED_MODEL = "all-MiniLM-L6-v2"
-DB_PATH = "chroma_db"
+
+# Anchor paths to this file's own folder, not the current working directory.
+# Streamlit Cloud runs from the repo root, so a plain "chroma_db" string
+# would end up in the wrong place otherwise.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "chroma_db")
+DEFAULT_PDF_PATH = os.path.join(BASE_DIR, "data", "python-handbook.pdf")
 COLLECTION_NAME = "python_handbook"
 
 
@@ -108,7 +114,9 @@ def main(pdf_path: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pdf", required=True, help="Path to the source PDF")
+    parser.add_argument(
+        "--pdf", default=DEFAULT_PDF_PATH, help="Path to the source PDF"
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.pdf):
