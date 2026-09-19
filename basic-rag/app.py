@@ -6,7 +6,10 @@ Web URL), the app builds a FAISS vector index over the content, and the user
 can then ask natural-language questions that are answered using only the
 uploaded content (with source citations).
 
-Stack: Streamlit + LangChain + FAISS + OpenAI
+LLM: Groq (fast Llama inference) via GROQ_API_KEY
+Embeddings: local HuggingFace sentence-transformers (free, no extra API key)
+
+Stack: Streamlit + LangChain + FAISS + Groq
 """
 
 import os
@@ -22,7 +25,8 @@ from langchain_community.document_loaders import (
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
 
 
@@ -31,7 +35,7 @@ st.set_page_config(page_title="Basic RAG App", page_icon="📄", layout="wide")
 st.title("📄 Basic RAG — Chat With Your Documents")
 st.caption(
     "Upload documents from different sources, then ask questions. "
-    "Answers are generated only from the content you provide."
+    "Answers are generated only from the content you provide, powered by Groq."
 )
 
 # ----------------------------- Session state -----------------------------
@@ -43,13 +47,32 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []  # list of (question, answer, sources)
 
 
+# ----------------------------- API key resolution -----------------------------
+# Prefer a secret set via Streamlit secrets / environment variable (recommended
+# for deployment) and only fall back to the sidebar input for local testing.
+# GROQ_API_KEY should never be hardcoded or committed to source control.
+default_groq_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+
+
 # ----------------------------- Sidebar: setup -----------------------------
 with st.sidebar:
     st.header("⚙️ Setup")
 
-    api_key = st.text_input("OpenAI API Key", type="password")
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
+    groq_api_key = st.text_input(
+        "Groq API Key",
+        value=default_groq_key,
+        type="password",
+        help="Stored only for this session. Prefer setting GROQ_API_KEY as a "
+             "secret/environment variable instead of pasting it here.",
+    )
+    if groq_api_key:
+        os.environ["GROQ_API_KEY"] = groq_api_key
+
+    model_name = st.selectbox(
+        "Groq model",
+        ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "gemma2-9b-it"],
+        index=0,
+    )
 
     st.divider()
     st.header("📥 Add Sources")
@@ -96,10 +119,16 @@ def load_document(uploaded_file):
     return docs
 
 
+@st.cache_resource(show_spinner=False)
+def get_embeddings():
+    # Local, free embedding model — no API key required for this step.
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+
 # ----------------------------- Build knowledge base -----------------------------
 if build_clicked:
-    if not api_key:
-        st.sidebar.error("Please enter your OpenAI API key first.")
+    if not groq_api_key:
+        st.sidebar.error("Please enter your Groq API key first.")
     elif not uploaded_files and not web_url:
         st.sidebar.error("Upload at least one file or provide a URL.")
     else:
@@ -128,11 +157,11 @@ if build_clicked:
                 )
                 chunks = splitter.split_documents(all_docs)
 
-                embeddings = OpenAIEmbeddings()
+                embeddings = get_embeddings()
                 vectorstore = FAISS.from_documents(chunks, embeddings)
                 st.session_state.vectorstore = vectorstore
 
-                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+                llm = ChatGroq(model=model_name, temperature=0)
                 st.session_state.qa_chain = RetrievalQA.from_chain_type(
                     llm=llm,
                     retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
